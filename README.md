@@ -29,6 +29,8 @@
       - [What Is An Inverted Index](#what-is-an-inverted-index)
       - [Of Course It's Not That Simple](#of-course-its-not-that-simple)
     - [Using Elasticsearch](#using-elasticsearch)
+      - [Using Indices](#using-indices)
+    - [What's New In Elasticsearch 8](#whats-new-in-elasticsearch-8)
 
 ## Section 1: Installing and Understanding Elasticsearch
 
@@ -246,5 +248,31 @@ bad: 2
 [back](#toc)
 
 ### Using Elasticsearch
+
+#### Using Indices
+
+- RESTful API
+  - Elasticsearch fundamentally works via HTTP requests and JSON data
+  - Any language or tool that can handle HTTP can handle Elasticsearch
+- Client API
+  - Most languages have specialized Elasticsearch librariesto make it even easier
+- Analytic Tools
+  - Web-based graphical UI'ssuch as Kibana let you ineteract with your indices and explore them without writing code
+
+[back](#toc)
+
+### What's New In Elasticsearch 8
+
+- The concept of document types are gone for good
+- Data streams are mature
+- Security enabled by default and is tighter
+- Natural Language Processing (NLP) via imported PyTroch Models
+- "Serverless log ingestion" from AWS Elastic Cloud
+- Elastic Agents for Azure and Cassandra
+- Vector similarity/kNN search (experimental)
+- Machine learning (experimental)
+- New canvas editor
+- Maps/vector tile support
+- New Kibana UI
 
 [back](#toc)
