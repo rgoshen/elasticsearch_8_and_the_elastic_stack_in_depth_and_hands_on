@@ -9,6 +9,7 @@
 
 - [Introduction](#introduction)
 - [Elasticsearch Overview](#elasticsearch-overview)
+- [Intro to HTTP and RESTful APIs](#intro-to-http-and-restful-apis)
 
 ## Introduction
 
@@ -57,5 +58,47 @@
 [back](#toc)
 
 ## Elasticsearch Overview
+
+### The Elastic Stack
+
+```mermaid
+flowchart LR
+    es(Elasticsearch) --> k(Kibana)
+    es --> l(Logstash/Beats)
+    es --> x(X-Pack)
+```
+
+1. Elasticsearch
+    1. Started off as scalable Lucene
+    2. Horizontally scalable search engine
+    3. Each "shard" is an inverted index of documents
+    4. But not just for full text search!
+    5. Can handle structured data, and can aggregate data quickly
+    6. Ofter a faster solution than Hadoop/Spark/Flink/etc.
+    - basically a server than can handle JSON requests and send back information in JSON
+2. Kibana
+    1. Web UI for searching and visualization
+    2. Complex aggregations, graphs and charts
+    3. Often used for log analysis
+    - sits on top of Elasticsearch
+3. Logstash/Beats
+    1. Ways to feed data into Elasticsearch
+    2. FileBeat can monitor log files, parse them, and import into Elasticsearch in near-real-time
+    3. Logstash also pushes data into Elasticsearch from many machines
+    4. Not just log files
+    - can collect data from numerous sources like S3, Kafka, etc.
+4. X-Pack
+    1. Security
+    2. Alerting
+    3. Monitoring
+    4. Reporting
+    5. Machine Learning
+    6. Graph Exploration
+
+[back](#toc)
+
+## Intro to HTTP and RESTful APIs
+
+### Rest: A Quick Intro
 
 [back](#toc)
