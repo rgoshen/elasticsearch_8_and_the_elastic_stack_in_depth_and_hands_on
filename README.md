@@ -38,6 +38,12 @@
   - [Section 2: Mapping and Indexing Data](#section-2-mapping-and-indexing-data)
     - [Connecting to Your Cluster](#connecting-to-your-cluster)
       - [Elasticsearch More Setup](#elasticsearch-more-setup)
+    - [Analyzers](#analyzers)
+      - [Creating Mappings](#creating-mappings)
+        - [What is a Mapping?](#what-is-a-mapping)
+      - [Common Mappings](#common-mappings)
+      - [More About Analyzers](#more-about-analyzers)
+      - [Choices for Analyzers](#choices-for-analyzers)
 
 ## Section 1: Installing and Understanding Elasticsearch
 
@@ -370,5 +376,103 @@ flowchart LR
 SSH: 127.0.0.1:22
 Elasticsearch: 127.0.0.1:9200
 Kibana: 127.0.0.1:5601
+
+[back](#toc)
+
+### Analyzers
+
+#### Creating Mappings
+
+##### What is a Mapping?
+
+- A mapping is a <span style="color: blue;">schema definition</span>
+- Elasticsearch has reasonable defaults, but sometimes you need to customize them
+
+```bash
+curl -XPUT 127.0.0.1:9200/movies -d '
+{
+  "mappings": {
+    "properties": {
+      "year": {"type": "date"}
+    }
+  }
+}'
+```
+
+#### Common Mappings
+
+**<span style="color: blue">Field Types</span>**
+
+- string, byte, short, integer, long, float, double, boolean, date
+
+```json
+{
+  "properties": {
+    "user_id": { "type": "long" }
+  }
+}
+```
+
+**<span style="color: blue">Field Index</span>**
+
+- Do you wnt this field indexed for full-text search?
+  - analyzed/not_analyzed/no
+
+```json
+{
+  "properties": {
+    "genre": {
+      "index": "not_analyzed"
+    }
+  }
+}
+```
+
+**<span style="color: blue">Field Analyzer</span>**
+
+- Define your tokenizer and token filter
+  - standard/whitespace/simple/english etc.
+
+```json
+{
+  "properties": {
+    "description": {
+      "analyzer": "english"
+    }
+  }
+}
+```
+
+#### More About Analyzers
+
+<span style="color: blue;">Character Filters</span>
+
+- remove HTML encoding, convert '&' to 'and'
+
+<span style="color: blue;">Tokenizer</span>
+
+- split strings on whitespace/puncuation/non-letters
+
+<span style="color: blue;">Token Filter</span>
+
+- Lowercasing, stemming, synonyms, stopwords
+
+#### Choices for Analyzers
+
+<span style="color: blue;">Standard</span>
+
+- split on word boundries, removed puncuation, lowercases, good choice if language is unknown
+
+<span style="color: blue;">Simple</span>
+
+- Splits on anything that isn't a letter, and lowercase
+
+<span style="color: blue;">Whitespace</span>
+
+- splits on whitespace but doesn't lowercase
+
+<span style="color: blue;">Langauge</span>
+
+- accounts for language-specific stopwords and stemming
 
 [back](#toc)
