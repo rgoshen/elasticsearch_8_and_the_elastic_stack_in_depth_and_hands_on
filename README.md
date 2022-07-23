@@ -31,6 +31,10 @@
     - [Using Elasticsearch](#using-elasticsearch)
       - [Using Indices](#using-indices)
     - [What's New In Elasticsearch 8](#whats-new-in-elasticsearch-8)
+    - [How Elasticsearch Scales](#how-elasticsearch-scales)
+      - [An Index is Split into Shards](#an-index-is-split-into-shards)
+      - [Primary and Replica Shards](#primary-and-replica-shards)
+      - [The Number of Primary Shards Cannot Be Changed Later](#the-number-of-primary-shards-cannot-be-changed-later)
 
 ## Section 1: Installing and Understanding Elasticsearch
 
@@ -274,5 +278,76 @@ bad: 2
 - New canvas editor
 - Maps/vector tile support
 - New Kibana UI
+- Enterprise search
+
+[back](#toc)
+
+### How Elasticsearch Scales
+
+#### An Index is Split into Shards
+
+- Documents are <span style="color: blue;">hashed</span> to a particular <span style="color: blue;">shard</span>
+- Each shard may be on a different <span style="color: blue;">node</span> in a <span style="color: blue;">cluster</span>
+- Every shard is a self-contained Lucene index of its own
+  - if you have a cluster of computers, you can spread theses shards across multiple machines
+  - as you need more capacity, you can throw more machines into your cluster and add more shards into that index so it can spread that load out more efficiently
+
+#### Primary and Replica Shards
+
+- one way Elasticsearch maintains resilency to failure
+
+- This <span style="color: blue;">index</span> has two <span style="color: blue;">primary shards</span> and two <span style="color: blue;">replicas</span>
+- Your application should round-robin requests amongst nodes
+
+```mermaid
+  classDiagram
+  class Node1{
+    Primary 1
+    Replica 0
+  }
+
+  class Node2{
+    Replica 0
+    Replica 1
+  }
+
+  class Node3{
+    Primary 0
+    Replica 1
+  }
+```
+
+- <span style="color: blue;">Write</span> requests are routed to the primary shard, then replicated
+  - bottle-necked by the number of primary shards you have
+- <span style="color: blue;">Read</span> requests are routed to the primary shardor any replica
+  - this is quicker
+  - spread out the reads more efficiently
+  - more replicas you have, the more read capacity you have
+
+> 📎 NOTE:
+>
+> It is a good idea to have an odd number of nodes for maximum resilency
+
+#### The Number of Primary Shards Cannot Be Changed Later
+
+- not as bad as it sounds - you can add <span style="color: blue;">more replica shards</span> for more read throughput
+- worst case you can <span style="color: blue;">re-index</span> your data
+- The number of shards can be set up front via a PUT commandvia <span style="color: blue;">REST</span>/HTTP
+
+```bash
+PUT /testindex
+{
+  "settings":{
+    "number_of_shards": 3,
+    "number_of_replicas": 1
+  }
+}
+```
+
+> 📎 NOTE:
+>
+> In the example above, we are setting 3 primary shards and
+> one replica shard for each primary shard for a total of
+> 6 shards.
 
 [back](#toc)
