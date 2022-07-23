@@ -22,6 +22,12 @@
       - [Restful APIs](#restful-apis)
       - [Rest Fancy-speak](#rest-fancy-speak)
       - [Why Rest?](#why-rest)
+      - [The curl command](#the-curl-command)
+    - [Elasticsearch Basics: Logical Concepts](#elasticsearch-basics-logical-concepts)
+      - [Logical Concepts of Elasticsearch](#logical-concepts-of-elasticsearch)
+    - [Term Frequency/Inverse Document Frequency (TF/IDF)](#term-frequencyinverse-document-frequency-tfidf)
+      - [What Is An Inverted Index](#what-is-an-inverted-index)
+      - [Of Course It's Not That Simple](#of-course-its-not-that-simple)
 
 ## Section 1: Installing and Understanding Elasticsearch
 
@@ -178,6 +184,62 @@ Six Guiding Constraints
 
 Language and system independent
 
-- no matter the language you use (ie. Python, Java, JavaScript), they all have a way of sending http requests
+- no matter the language you use (ie. Python, Java, JavaScript), they all have a way of sending HTTP requests
+
+#### The curl command
+
+A way to use HTTP requests from the command line
+
+From code, you'll use whatever library you use for HTTP/REST in the same way.
+
+`curl -H "Content-Type: application/json" <URL> -d '<BODY>'`
+
+[back](#toc)
+
+### Elasticsearch Basics: Logical Concepts
+
+#### Logical Concepts of Elasticsearch
+
+- Documents
+  - documents are things you are searching for
+  - they can be more than text - any structured JSON data works
+  - every document has a unique id and a type
+- Indices
+  - an index powers search into all documents within a collection of types
+  - they contain **inverted indices** that let you search across everything in them at once
+  - **mappings** that define schemas for the data within
+
+[back](#toc)
+
+### Term Frequency/Inverse Document Frequency (TF/IDF)
+
+#### What Is An Inverted Index
+
+**Document 1**:
+
+Space the final frontier. These are the voyages...
+
+**Document 2**:
+
+He's bad, he's number one. He's the space cowboy with the laser gun!
+
+**Inverted Index**
+
+space: 1, 2
+the: 1, 2
+final: 1
+frontier: 1
+he: 2
+bad: 2
+
+#### Of Course It's Not That Simple
+
+**TF_IDF** means Term Frequency \* Inverse Document Frequency
+
+**Term Frequency** is how often a term appears in a <span style="color: green;">given document</span>
+
+**Document Frequency** is how often a term appears in <span style="color: green;">all documents</span>
+
+**Term Frequency/Document Frequency** measures the <span style="color: green;">relavence</span> of a term in a document
 
 [back](#toc)
