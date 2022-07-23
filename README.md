@@ -28,6 +28,7 @@
     - [Term Frequency/Inverse Document Frequency (TF/IDF)](#term-frequencyinverse-document-frequency-tfidf)
       - [What Is An Inverted Index](#what-is-an-inverted-index)
       - [Of Course It's Not That Simple](#of-course-its-not-that-simple)
+    - [Using Elasticsearch](#using-elasticsearch)
 
 ## Section 1: Installing and Understanding Elasticsearch
 
@@ -241,5 +242,9 @@ bad: 2
 **Document Frequency** is how often a term appears in <span style="color: green;">all documents</span>
 
 **Term Frequency/Document Frequency** measures the <span style="color: green;">relavence</span> of a term in a document
+
+[back](#toc)
+
+### Using Elasticsearch
 
 [back](#toc)
