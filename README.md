@@ -459,7 +459,7 @@ curl -XPUT 127.0.0.1:9200/movies -d '
 
 #### Choices for Analyzers
 
-<span style="color: blue;">Standard</span>
+<span style="color: blue;">Standard</span> (default)
 
 - split on word boundries, removed puncuation, lowercases, good choice if language is unknown
 
@@ -471,7 +471,7 @@ curl -XPUT 127.0.0.1:9200/movies -d '
 
 - splits on whitespace but doesn't lowercase
 
-<span style="color: blue;">Langauge</span>
+<span style="color: blue;">Langauge</span> (i.e. English)
 
 - accounts for language-specific stopwords and stemming
 
