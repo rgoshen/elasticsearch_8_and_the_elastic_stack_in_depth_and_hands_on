@@ -35,6 +35,9 @@
       - [An Index is Split into Shards](#an-index-is-split-into-shards)
       - [Primary and Replica Shards](#primary-and-replica-shards)
       - [The Number of Primary Shards Cannot Be Changed Later](#the-number-of-primary-shards-cannot-be-changed-later)
+  - [Section 2: Mapping and Indexing Data](#section-2-mapping-and-indexing-data)
+    - [Connecting to Your Cluster](#connecting-to-your-cluster)
+      - [Elasticsearch More Setup](#elasticsearch-more-setup)
 
 ## Section 1: Installing and Understanding Elasticsearch
 
@@ -349,5 +352,23 @@ PUT /testindex
 > In the example above, we are setting 3 primary shards and
 > one replica shard for each primary shard for a total of
 > 6 shards.
+
+[back](#toc)
+
+## Section 2: Mapping and Indexing Data
+
+### Connecting to Your Cluster
+
+#### Elasticsearch More Setup
+
+```mermaid
+flowchart LR
+  start[Set up Port Mappings] --> install[Install PuTTY] --> connect[Connect to your cluster]
+```
+
+**Login to virtual machine** (if one is being used)
+SSH: 127.0.0.1:22
+Elasticsearch: 127.0.0.1:9200
+Kibana: 127.0.0.1:5601
 
 [back](#toc)
