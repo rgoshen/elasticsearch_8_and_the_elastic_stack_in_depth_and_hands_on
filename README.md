@@ -46,9 +46,13 @@
       - [Choices for Analyzers](#choices-for-analyzers)
     - [Import a Single Move via JSON/REST](#import-a-single-move-via-jsonrest)
       - [Insert](#insert)
-    - [Insert Many Movies at Once witt the Bulk API](#insert-many-movies-at-once-witt-the-bulk-api)
+    - [Insert Many Movies at Once with the Bulk API](#insert-many-movies-at-once-with-the-bulk-api)
       - [Import Many Documents](#import-many-documents)
         - [JSON Bulk Import](#json-bulk-import)
+    - [Updating Data in Elasticsearch](#updating-data-in-elasticsearch)
+      - [Versions](#versions)
+      - [Partial Update API](#partial-update-api)
+      - [Full Update](#full-update)
 
 ## Section 1: Installing and Understanding Elasticsearch
 
@@ -540,7 +544,7 @@ curl -H "Content-Type: application/json" -XGET 127.0.0.1:9200/movies/_search
 
 [back](#toc)
 
-### Insert Many Movies at Once witt the Bulk API
+### Insert Many Movies at Once with the Bulk API
 
 #### Import Many Documents
 
@@ -563,5 +567,77 @@ curl -H "Content-Type: application/json" -XPUT 127.0.0.1:9200/_bulk --data-binar
 ```
 
 - `--data-binary` is a way to import a file vs typing it all out by hand
+
+verify it took
+
+```bash
+curl -H "Content-Type: application/json" -XGET 127.0.0.1:9200/movies/_search
+
+{"took":441,"timed_out":false,"_shards":{"total":1,"successful":1,"skipped":0,"failed":0},"hits":{"total":{"value":5,"relation":"eq"},"max_score":1.0,"hits":[{"_index":"movies","_id":"109487","_score":1.0,"_source":
+{
+  "genre" : ["IMAX", "Sci-Fi"],
+  "title": "Interstellar",
+  "year": 2014
+}},{"_index":"movies","_id":"135569","_score":1.0,"_source":{ "id": "135569", "title" : "Star Trek Beyond", "year":2016 , "genre":["Action", "Adventure", "Sci-Fi"] }},{"_index":"movies","_id":"122886","_score":1.0,"_source":{ "id": "122886", "title" : "Star Wars: Episode VII - The Force Awakens", "year":2015 , "genre":["Action", "Adventure", "Fantasy", "Sci-Fi", "IMAX"] }},{"_index":"movies","_id":"58559","_score":1.0,"_source":{ "id": "58559", "title" : "Dark Knight, The", "year":2008 , "genre":["Action", "Crime", "Drama", "IMAX"] }},{"_index":"movies","_id":"1924","_score":1.0,"_source":{ "id": "1924", "title" : "Plan 9 from Outer Space", "year":1959 , "genre":["Horror", "Sci-Fi"] }}]}}%
+```
+
+[back](#toc)
+
+### Updating Data in Elasticsearch
+
+#### Versions
+
+- Every document has a \_version field
+- Elasticsearch documents are immutable
+- when you update an existing document:
+  - a new document is created with an incremented \_version
+  - the old document is marked for deltion
+
+#### Partial Update API
+
+```bash
+curl -H "Content-Type: application/json" -XPOST 127.0.0.1:9200/movies/_update/109487 - d '
+{
+  "doc": {
+    "title":"Intersteller"
+  }
+}'
+
+{"_index":"movies","_id":"109487","_version":3,"result":"updated","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":6,"_primary_term":2}%
+```
+
+verify
+
+```bash
+curl -H "Content-Type: application/json" -XGET 127.0.0.1:9200/movies/_doc/109487
+
+{"_index":"movies","_id":"109487","_version":3,"_seq_no":6,"_primary_term":2,"found":true,"_source":{"genre":["IMAX","Sci-Fi"],"title":"Intersteller","year":2014}}%
+```
+
+#### Full Update
+
+```bash
+curl -H "Content-Type: application/json" -XPUT 127.0.0.1:9200/movies/_doc/109487 -d '
+{
+  "genre":["IMAX", "Sci-Fi"],
+  "title":"Interstellar foo",
+  "year":2014
+}'
+
+{"_index":"movies","_id":"109487","_version":2,"result":"updated","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":5,"_primary_term":2}%
+```
+
+verify
+
+```bash
+curl -H "Content-Type: application/json" -XGET 127.0.0.1:9200/movies/_doc/109487
+
+{"_index":"movies","_id":"109487","_version":2,"_seq_no":5,"_primary_term":2,"found":true,"_source":
+{
+"genre":["IMAX", "Sci-Fi"],
+"title":"Interstaller foo",
+"year":2014
+}}%
+```
 
 [back](#toc)
