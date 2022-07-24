@@ -57,6 +57,8 @@
     - [Dealing with Concurrency](#dealing-with-concurrency)
       - [The Problem](#the-problem)
       - [Optimistic Concurrency Control](#optimistic-concurrency-control)
+    - [Using Analyzers and Tokenizers](#using-analyzers-and-tokenizers)
+      - [Using Analyzers](#using-analyzers)
 
 ## Section 1: Installing and Understanding Elasticsearch
 
@@ -812,12 +814,460 @@ Now have to go back and retry with the updated sequence number.
 With retry on conflict parameter:
 
 ```bash
-curl -H "Content-Type: application/json" -XPOST '127.0.0.1:9200/movies/_update/58559?retry_on_conflict=5?pretty' -d '
+curl -H "Content-Type: application/json" -XPOST 127.0.0.1:9200/movies/_update/58559?retry_on_conflict=5 -d '
 {
   "doc":{
     "title": "Dark Knight, The foo",
   }
 }'
+```
+
+[back](#toc)
+
+### Using Analyzers and Tokenizers
+
+#### Using Analyzers
+
+<span style="color: blue;">Sometimes text fields should be exact-match</span>
+
+- Use keyword mapping instead of text
+
+<span style="color: blue;">Search on analyzed text fields will return anything remotely relevant</span>
+
+- Depending on the analyzer, results will be case-insensitive, stemmed, stopwords removed, synonyms applied, etc.
+- Searches with mutliple terms need not match them all
+
+```bash
+curl -H "Content-Type: application/json" -XGET '127.0.0.1:9200/movies/_search?pretty' -d '
+{
+  "query":{
+    "match":{
+      "title": "Star Trek"
+    }
+  }
+}'
+
+{
+  "took" : 52,
+  "timed_out" : false,
+  "_shards" : {
+    "total" : 1,
+    "successful" : 1,
+    "skipped" : 0,
+    "failed" : 0
+  },
+  "hits" : {
+    "total" : {
+      "value" : 2,
+      "relation" : "eq"
+    },
+    "max_score" : 2.1966653,
+    "hits" : [
+      {
+        "_index" : "movies",
+        "_id" : "135569",
+        "_score" : 2.1966653,
+        "_source" : {
+          "id" : "135569",
+          "title" : "Star Trek Beyond",
+          "year" : 2016,
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Sci-Fi"
+          ]
+        }
+      },
+      {
+        "_index" : "movies",
+        "_id" : "122886",
+        "_score" : 0.56478655,
+        "_source" : {
+          "id" : "122886",
+          "title" : "Star Wars: Episode VII - The Force Awakens",
+          "year" : 2015,
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Fantasy",
+            "Sci-Fi",
+            "IMAX"
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+Another example
+
+```bash
+curl -H "Content-Type: application/json" -XGET '127.0.0.1:9200/movies/_search?pretty' -d '
+{
+  "query":{
+    "match_phrase":{
+      "genre": "sci"
+    }
+  }
+}'
+
+{
+  "took" : 7,
+  "timed_out" : false,
+  "_shards" : {
+    "total" : 1,
+    "successful" : 1,
+    "skipped" : 0,
+    "failed" : 0
+  },
+  "hits" : {
+    "total" : {
+      "value" : 3,
+      "relation" : "eq"
+    },
+    "max_score" : 0.40546027,
+    "hits" : [
+      {
+        "_index" : "movies",
+        "_id" : "1924",
+        "_score" : 0.40546027,
+        "_source" : {
+          "id" : "1924",
+          "title" : "Plan 9 from Outer Space",
+          "year" : 1959,
+          "genre" : [
+            "Horror",
+            "Sci-Fi"
+          ]
+        }
+      },
+      {
+        "_index" : "movies",
+        "_id" : "135569",
+        "_score" : 0.3654697,
+        "_source" : {
+          "id" : "135569",
+          "title" : "Star Trek Beyond",
+          "year" : 2016,
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Sci-Fi"
+          ]
+        }
+      },
+      {
+        "_index" : "movies",
+        "_id" : "122886",
+        "_score" : 0.305255,
+        "_source" : {
+          "id" : "122886",
+          "title" : "Star Wars: Episode VII - The Force Awakens",
+          "year" : 2015,
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Fantasy",
+            "Sci-Fi",
+            "IMAX"
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+In both instances, the title field and genre field are treated as analyzed text fields and therefore do not require exact matches.
+
+Is this the type of behavior we want for the genre? Or do we want an exact match?
+
+> ❗ Remember: once an index is created, you can not go back and change the fields.
+
+So, we need to nuke the index first:
+
+```bash
+curl -H "Content-Type: application/json" -XDELETE 127.0.0.1:9200/movies
+
+{"acknowledged":true}%
+```
+
+Next, import a new mapping:
+
+```bash
+curl -H "Content-Type: application/json" -XPUT 127.0.0.1:9200/movies -d '
+{
+  "mappings":{
+    "properties":{
+      "id":{"type": "integer"},
+      "year":{"type":"date"},
+      "genre":{"type":"keyword"},
+      "title":{"type":"text", "analyzer":"english"}
+    }
+  }
+}'
+
+{"acknowledged":true,"shards_acknowledged":true,"index":"movies"}%
+```
+
+With the 'keyword' for type on genre means it will **only exact** match whatever words we provide for the query.
+
+Reindex the data:
+
+```bash
+curl -H "Content-Type: application/json" -XPUT '127.0.0.1:9200/_bulk?pretty --data-binary @movies.json'
+
+{
+  "took" : 942,
+  "timed_out" : false,
+  "_shards" : {
+    "total" : 1,
+    "successful" : 1,
+    "skipped" : 0,
+    "failed" : 0
+  },
+  "hits" : {
+    "total" : {
+      "value" : 5,
+      "relation" : "eq"
+    },
+    "max_score" : 1.0,
+    "hits" : [
+      {
+        "_index" : "movies",
+        "_id" : "135569",
+        "_score" : 1.0,
+        "_source" : {
+          "id" : "135569",
+          "title" : "Star Trek Beyond",
+          "year" : 2016,
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Sci-Fi"
+          ]
+        }
+      },
+      {
+        "_index" : "movies",
+        "_id" : "122886",
+        "_score" : 1.0,
+        "_source" : {
+          "id" : "122886",
+          "title" : "Star Wars: Episode VII - The Force Awakens",
+          "year" : 2015,
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Fantasy",
+            "Sci-Fi",
+            "IMAX"
+          ]
+        }
+      },
+      {
+        "_index" : "movies",
+        "_id" : "109487",
+        "_score" : 1.0,
+        "_source" : {
+          "id" : "109487",
+          "title" : "Interstellar",
+          "year" : 2014,
+          "genre" : [
+            "Sci-Fi",
+            "IMAX"
+          ]
+        }
+      },
+      {
+        "_index" : "movies",
+        "_id" : "58559",
+        "_score" : 1.0,
+        "_source" : {
+          "id" : "58559",
+          "title" : "Dark Knight, The",
+          "year" : 2008,
+          "genre" : [
+            "Action",
+            "Crime",
+            "Drama",
+            "IMAX"
+          ]
+        }
+      },
+      {
+        "_index" : "movies",
+        "_id" : "1924",
+        "_score" : 1.0,
+        "_source" : {
+          "id" : "1924",
+          "title" : "Plan 9 from Outer Space",
+          "year" : 1959,
+          "genre" : [
+            "Horror",
+            "Sci-Fi"
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+```bash
+curl -H "Content-Type: application/json" -XGET '127.0.0.1:9200/movies/_search?pretty' -d '
+{
+  "query":{
+    "match_phrase":{
+      "genre": "sci"
+    }
+  }
+}'
+
+{
+  "took" : 10,
+  "timed_out" : false,
+  "_shards" : {
+    "total" : 1,
+    "successful" : 1,
+    "skipped" : 0,
+    "failed" : 0
+  },
+  "hits" : {
+    "total" : {
+      "value" : 0,
+      "relation" : "eq"
+    },
+    "max_score" : null,
+    "hits" : [ ]
+  }
+}
+```
+
+Now, this was expected because we changed it to a keyword field instead.
+
+```bash
+curl -H "Content-Type: application/json" -XGET '127.0.0.1:9200/movies/_search?pretty' -d '
+{
+  "query":{
+    "match_phrase":{
+      "genre": "sci-fi"
+    }
+  }
+}'
+
+{
+  "took" : 8,
+  "timed_out" : false,
+  "_shards" : {
+    "total" : 1,
+    "successful" : 1,
+    "skipped" : 0,
+    "failed" : 0
+  },
+  "hits" : {
+    "total" : {
+      "value" : 0,
+      "relation" : "eq"
+    },
+    "max_score" : null,
+    "hits" : [ ]
+  }
+}
+```
+
+Still the expected return because now a keyword field and must be exact to include word case sensitivity.
+
+```bash
+curl -H "Content-Type: application/json" -XGET '127.0.0.1:9200/movies/_search?pretty' -d '
+{
+  "query":{
+    "match_phrase":{
+      "genre": "Sci-Fi"
+    }
+  }
+}'
+
+{
+  "took" : 14,
+  "timed_out" : false,
+  "_shards" : {
+    "total" : 1,
+    "successful" : 1,
+    "skipped" : 0,
+    "failed" : 0
+  },
+  "hits" : {
+    "total" : {
+      "value" : 4,
+      "relation" : "eq"
+    },
+    "max_score" : 0.40025333,
+    "hits" : [
+      {
+        "_index" : "movies",
+        "_id" : "135569",
+        "_score" : 0.40025333,
+        "_source" : {
+          "id" : "135569",
+          "title" : "Star Trek Beyond",
+          "year" : 2016,
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Sci-Fi"
+          ]
+        }
+      },
+      {
+        "_index" : "movies",
+        "_id" : "122886",
+        "_score" : 0.40025333,
+        "_source" : {
+          "id" : "122886",
+          "title" : "Star Wars: Episode VII - The Force Awakens",
+          "year" : 2015,
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Fantasy",
+            "Sci-Fi",
+            "IMAX"
+          ]
+        }
+      },
+      {
+        "_index" : "movies",
+        "_id" : "109487",
+        "_score" : 0.40025333,
+        "_source" : {
+          "id" : "109487",
+          "title" : "Interstellar",
+          "year" : 2014,
+          "genre" : [
+            "Sci-Fi",
+            "IMAX"
+          ]
+        }
+      },
+      {
+        "_index" : "movies",
+        "_id" : "1924",
+        "_score" : 0.40025333,
+        "_source" : {
+          "id" : "1924",
+          "title" : "Plan 9 from Outer Space",
+          "year" : 1959,
+          "genre" : [
+            "Horror",
+            "Sci-Fi"
+          ]
+        }
+      }
+    ]
+  }
+}
 ```
 
 [back](#toc)
