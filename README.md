@@ -53,6 +53,10 @@
       - [Versions](#versions)
       - [Partial Update API](#partial-update-api)
       - [Full Update](#full-update)
+    - [Deleting Data in Elasticsearch](#deleting-data-in-elasticsearch)
+    - [Dealing with Concurrency](#dealing-with-concurrency)
+      - [The Problem](#the-problem)
+      - [Optimistic Concurrency Control](#optimistic-concurrency-control)
 
 ## Section 1: Installing and Understanding Elasticsearch
 
@@ -638,6 +642,182 @@ curl -H "Content-Type: application/json" -XGET 127.0.0.1:9200/movies/_doc/109487
 "title":"Interstaller foo",
 "year":2014
 }}%
+```
+
+[back](#toc)
+
+### Deleting Data in Elasticsearch
+
+Just use the DELETE method:
+
+If you know the document id of the movie you want to delete:
+
+```bash
+curl -H "Content-Type: application/json" -XDELETE 127.0.0.1:9200/movies/_doc/109487
+
+{"_index":"movies","_id":"109487","_version":5,"result":"deleted","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":8,"_primary_term":2}%
+```
+
+verify
+
+```bash
+curl -H "Content-Type: application/json" -XGET 127.0.0.1:9200/movies/_doc/109487
+
+{"_index":"movies","_id":"109487","found":false}%
+```
+
+If you don't know the document id of the movie you want to delete, then you have to search for the document you want to delete
+
+```bash
+curl -H "Content-Type: application/json" -XGET '127.0.0.1:9200/movies/_search?q=Dark&pretty'
+
+{
+  "took" : 52,
+  "timed_out" : false,
+  "_shards" : {
+    "total" : 1,
+    "successful" : 1,
+    "skipped" : 0,
+    "failed" : 0
+  },
+  "hits" : {
+    "total" : {
+      "value" : 1,
+      "relation" : "eq"
+    },
+    "max_score" : 1.3940738,
+    "hits" : [
+      {
+        "_index" : "movies",
+        "_id" : "58559",
+        "_score" : 1.3940738,
+        "_source" : {
+          "id" : "58559",
+          "title" : "Dark Knight, The",
+          "year" : 2008,
+          "genre" : [
+            "Action",
+            "Crime",
+            "Drama",
+            "IMAX"
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+[back](#toc)
+
+### Dealing with Concurrency
+
+#### The Problem
+
+Two different clients running a big distributed website. They maintain page counts for any documents that may be viewed. These documents are pages on the website. Two people are viewing the same page at the same time through two different web servers.
+
+```mermaid
+flowchart LR
+id1[Get view count for page] --> count1[10] --> page1[Increment view count for page] --> count2[12]
+id2[Get view count for page] --> count3[10] --> page2[Increment view count for page] --> count4[12]
+```
+
+But it should be 12!
+There were two increment requests.
+Brief window of time between retrieving the current view count of the page and writing the new view count of the page during where things went wrong to this concurrency issue.
+
+Solution:
+**Optimistic Concurrency Control**
+
+#### Optimistic Concurrency Control
+
+- similar to how the version field was used in updating a document
+- difference though is that instead of a single version field, we now have a sequence number and the primary shard that owns that sequence by taking the sequence number and primary term together.
+  - results in a unique chronological record of this given document
+
+```mermaid
+flowchart LR
+id1[Get view count for page] --> count1[10 _seq_no: 9 _primary_term: 1] --> page1[Increment for _seq_no: 9 / _primary_term: 1] --> count2[11]
+id2[Get view count for page] --> count3[10 _seq_no: 9 _primary_term: 1] --> page2[Increment for _seq_no: 9 / _primary_term: 1] --> count4[Error! Try again.]
+```
+
+Use retry_on_conflicts=N to automatically retry.
+
+```bash
+curl -H "Content-Type: application/json" -XGET '127.0.0.1:9200/movies/_doc/58559?pretty'
+
+{
+  "_index" : "movies",
+  "_id" : "58559",
+  "_version" : 1,
+  "_seq_no" : 3,
+  "_primary_term" : 2,
+  "found" : true,
+  "_source" : {
+    "id" : "58559",
+    "title" : "Dark Knight, The",
+    "year" : 2008,
+    "genre" : [
+      "Action",
+      "Crime",
+      "Drama",
+      "IMAX"
+    ]
+  }
+}
+```
+
+The combination of `_seq_no` and `_primary_term` indicate the specific revision.
+
+```bash
+curl -H "Content-Type: application/json" -XPUT '127.0.0.1:9200/movies/_doc/58559?if_seq_no=3&if_primary_term=2' -d '
+{
+  "genre":["Action", "Crime", "Drama", "IMAX"],
+  "title": "Dark Knight, The foo",
+  "year": 2008
+}'
+
+{"_index":"movies","_id":"58559","_version":2,"result":"updated","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":11,"_primary_term":2}%
+
+curl -H "Content-Type: application/json" -XGET '127.0.0.1:9200/movies/_doc/58559?pretty'
+
+{
+  "_index" : "movies",
+  "_id" : "58559",
+  "_version" : 2,
+  "_seq_no" : 11,
+  "_primary_term" : 2,
+  "found" : true,
+  "_source" : {
+    "genre" : [
+      "Action",
+      "Crime",
+      "Drama",
+      "IMAX"
+    ],
+    "title" : "Dark Knight, The foo",
+    "year" : 2008
+  }
+}
+```
+
+if someone else tried to update the same sequence no. and primary term, below is the what Elasticsearch would return
+
+```bash
+{"error":{"root_cause":[{"type":"version_conflict_engine_exception","reason":"[58559]: version conflict, required seqNo [3], primary term [2]. current document has seqNo [11] and primary term [2]","index_uuid":"RyFItiK4R4egwbGF3_8GAg","shard":"0","index":"movies"}],"type":"version_conflict_engine_exception","reason":"[58559]: version conflict, required seqNo [3], primary term [2]. current document has seqNo [11] and primary term [2]","index_uuid":"RyFItiK4R4egwbGF3_8GAg","shard":"0","index":"movies"},"status":409}%
+```
+
+Now have to go back and retry with the updated sequence number.
+
+With retry on conflict parameter:
+
+```bash
+curl -H "Content-Type: application/json" -XPOST '127.0.0.1:9200/movies/_update/58559?retry_on_conflict=5?pretty' -d '
+{
+  "doc":{
+    "title": "Dark Knight, The foo",
+  }
+}'
 ```
 
 [back](#toc)
