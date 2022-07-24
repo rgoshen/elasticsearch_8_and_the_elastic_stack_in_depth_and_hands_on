@@ -46,6 +46,9 @@
       - [Choices for Analyzers](#choices-for-analyzers)
     - [Import a Single Move via JSON/REST](#import-a-single-move-via-jsonrest)
       - [Insert](#insert)
+    - [Insert Many Movies at Once witt the Bulk API](#insert-many-movies-at-once-witt-the-bulk-api)
+      - [Import Many Documents](#import-many-documents)
+        - [JSON Bulk Import](#json-bulk-import)
 
 ## Section 1: Installing and Understanding Elasticsearch
 
@@ -534,5 +537,31 @@ curl -H "Content-Type: application/json" -XGET 127.0.0.1:9200/movies/_search
   "year": 2014
 }}]}}%
 ```
+
+[back](#toc)
+
+### Insert Many Movies at Once witt the Bulk API
+
+#### Import Many Documents
+
+##### JSON Bulk Import
+
+_example_
+
+```bash
+curl -H "Content-Type: application/json" -XPUT 127.0.0.1:9200/movies/_bulk -d '
+{ "create": { "_index": "movies", "_id": "135569" } }
+{ "id": "135569", "title": "Star Trek Beyond", "year": 2016, "genre": ["Action", "Adventure", "Sci-Fi" ] }
+...
+'
+```
+
+```bash
+curl -H "Content-Type: application/json" -XPUT 127.0.0.1:9200/_bulk --data-binary @movies.json
+
+{"took":293,"errors":true,"items":[{"create":{"_index":"movies","_id":"135569","_version":1,"result":"created","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":1,"_primary_term":2,"status":201}},{"create":{"_index":"movies","_id":"122886","_version":1,"result":"created","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":2,"_primary_term":2,"status":201}},{"create":{"_index":"movies","_id":"109487","status":409,"error":{"type":"version_conflict_engine_exception","reason":"[109487]: version conflict, document already exists (current version [1])","index_uuid":"RyFItiK4R4egwbGF3_8GAg","shard":"0","index":"movies"}}},{"create":{"_index":"movies","_id":"58559","_version":1,"result":"created","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":3,"_primary_term":2,"status":201}},{"create":{"_index":"movies","_id":"1924","_version":1,"result":"created","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":4,"_primary_term":2,"status":201}}]}%
+```
+
+- `--data-binary` is a way to import a file vs typing it all out by hand
 
 [back](#toc)
