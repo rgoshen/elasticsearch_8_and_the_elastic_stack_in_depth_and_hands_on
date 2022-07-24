@@ -44,6 +44,8 @@
       - [Common Mappings](#common-mappings)
       - [More About Analyzers](#more-about-analyzers)
       - [Choices for Analyzers](#choices-for-analyzers)
+    - [Import a Single Move via JSON/REST](#import-a-single-move-via-jsonrest)
+      - [Insert](#insert)
 
 ## Section 1: Installing and Understanding Elasticsearch
 
@@ -474,5 +476,63 @@ curl -XPUT 127.0.0.1:9200/movies -d '
 <span style="color: blue;">Langauge</span> (i.e. English)
 
 - accounts for language-specific stopwords and stemming
+
+[back](#toc)
+
+### Import a Single Move via JSON/REST
+
+#### Insert
+
+insert mapping
+
+```bash
+curl -H "Content-Type: application/json" -XPUT 127.0.0.1:9200/movies -d '
+{
+  "mappings": {
+    "properties": {
+      "year": "date"
+    }
+  }
+}'
+
+{"acknowledged":true,"shards_acknowledged":true,"index":"movies"}%
+```
+
+verify it actually took
+
+```bash
+curl -H "Content-Type: application/json" -XGET 127.0.0.1:9200/movies/_mapping
+
+{"movies":{"mappings":{"properties":{"year":{"type":"date"}}}}}%
+```
+
+insert movie
+
+```bash
+curl -H "Content-Type: application/json" -XPUT 127.0.0.1:9200/movies/_doc/109487?pretty -d '
+{
+  "genre" : ["IMAX", "Sci-Fi"],
+  "title": "Interstellar",
+  "year": 2014
+}'
+
+{"_index":"movies","_id":"109487","_version":1,"result":"created","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":0,"_primary_term":1}%
+```
+
+- you could use either XPUT or XPOST here
+  - but since we are generating a movie id ourselves and not asking elasticsearch to generate one for us, XPUT is the better choice
+
+verify it actually inserted the movie
+
+```bash
+curl -H "Content-Type: application/json" -XGET 127.0.0.1:9200/movies/_search
+
+{"took":26,"timed_out":false,"_shards":{"total":1,"successful":1,"skipped":0,"failed":0},"hits":{"total":{"value":1,"relation":"eq"},"max_score":1.0,"hits":[{"_index":"movies","_id":"109487","_score":1.0,"_source":
+{
+  "genre" : ["IMAX", "Sci-Fi"],
+  "title": "Interstellar",
+  "year": 2014
+}}]}}%
+```
 
 [back](#toc)
