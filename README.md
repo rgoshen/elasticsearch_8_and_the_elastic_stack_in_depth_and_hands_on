@@ -59,6 +59,9 @@
       - [Optimistic Concurrency Control](#optimistic-concurrency-control)
     - [Using Analyzers and Tokenizers](#using-analyzers-and-tokenizers)
       - [Using Analyzers](#using-analyzers)
+    - [Data Modeling and Parent/Child Relationships, Part 1](#data-modeling-and-parentchild-relationships-part-1)
+      - [Strategies For Relational Data](#strategies-for-relational-data)
+    - [Data Modeling and Parent/Child Relationships, Part 2](#data-modeling-and-parentchild-relationships-part-2)
 
 ## Section 1: Installing and Understanding Elasticsearch
 
@@ -1263,6 +1266,321 @@ curl -H "Content-Type: application/json" -XGET '127.0.0.1:9200/movies/_search?pr
             "Horror",
             "Sci-Fi"
           ]
+        }
+      }
+    ]
+  }
+}
+```
+
+[back](#toc)
+
+### Data Modeling and Parent/Child Relationships, Part 1
+
+#### Strategies For Relational Data
+
+**Normalized data**
+
+```mermaid
+flowchart LR
+lrating(Look up rating) --> rating(RATING userID, movieID, rating) --> ltitle(Look up title) --> title(MOVIE movieID, title, genres)
+```
+
+This is a normalized approach, where storing ratings and movie names independently because don't want to make a copy of the movie name and every singe rating entry. (a lot of ratings but not a lot of movie titles)
+
+- Minimizes storage space, makes it easy to change titles
+- But requires two queries, and storage is cheap!
+- Makes it easier to update or change movie titles
+
+Considerations:
+
+- minimizes storage space
+- easier to update/change movie titles (only one entry on one document and be reflected throughout the entire system)
+- two queries to show the pertinent information to the user (increased latency)
+- double the traffic in the cluster
+- storage is cheap!
+
+**Denormalized data**
+
+```mermaid
+flowchart LR
+lrating(Look up rating) --> rating(RATING userID, rating, title)
+```
+
+- Titles are duplicated, but only one query
+
+Considerations:
+
+- requires a lot of space since you are copy the movied title for every rating
+- single query (better latency)
+- harder to make changes/updates to movie titles
+  - do movie titles really change (except for those typos)?
+
+**Parent/Child Relationship**
+
+```mermaid
+flowchart TD
+sw[Star Wars] --> nh[A New Hope]
+sw --> esb[Empire Strikes Back]
+sw --> roj[Return of the Jedi]
+sw --> fa[The Force Awakens]
+```
+
+[back](#toc)
+
+### Data Modeling and Parent/Child Relationships, Part 2
+
+Create a new index with a parent/child mapping
+
+```bash
+curl -H "Content-Type: application/json" -XPUT 127.0.0.1:9200/series -d '
+{
+  "mappings":{
+    "properties":{
+      "film_to_franchise":{
+        "type":"join",
+        "relations":{"franchise":"film"}
+      }
+    }
+  }
+}'
+
+{"acknowledged":true,"shards_acknowledged":true,"index":"series"}%
+```
+
+Insert the new data
+
+```bash
+curl -H "Content-Type: application/json" -XPUT 127.0.0.1:9200/_bulk --data-binary @series.json
+
+{"took":374,"errors":false,"items":[{"create":{"_index":"series","_id":"1","_version":1,"result":"created","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":0,"_primary_term":1,"status":201}},{"create":{"_index":"series","_id":"260","_version":1,"result":"created","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":1,"_primary_term":1,"status":201}},{"create":{"_index":"series","_id":"1196","_version":1,"result":"created","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":2,"_primary_term":1,"status":201}},{"create":{"_index":"series","_id":"1210","_version":1,"result":"created","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":3,"_primary_term":1,"status":201}},{"create":{"_index":"series","_id":"2628","_version":1,"result":"created","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":4,"_primary_term":1,"status":201}},{"create":{"_index":"series","_id":"5378","_version":1,"result":"created","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":5,"_primary_term":1,"status":201}},{"create":{"_index":"series","_id":"33493","_version":1,"result":"created","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":6,"_primary_term":1,"status":201}},{"create":{"_index":"series","_id":"122886","_version":1,"result":"created","_shards":{"total":2,"successful":1,"failed":0},"_seq_no":7,"_primary_term":1,"status":201}}]}%
+```
+
+Now, we want all the films associated with the Star Wars franchise
+
+```bash
+curl -H "Content-Type: application/json" -XGET '127.0.0.1:9200/series/_search?pretty' -d '
+{
+  "query":{
+    "has_parent":{
+      "parent_type":"franchise",
+      "query":{
+        "match":{
+          "title":"Star Wars"
+        }
+      }
+    }
+  }
+}'
+
+{
+  "took" : 55,
+  "timed_out" : false,
+  "_shards" : {
+    "total" : 1,
+    "successful" : 1,
+    "skipped" : 0,
+    "failed" : 0
+  },
+  "hits" : {
+    "total" : {
+      "value" : 7,
+      "relation" : "eq"
+    },
+    "max_score" : 1.0,
+    "hits" : [
+      {
+        "_index" : "series",
+        "_id" : "260",
+        "_score" : 1.0,
+        "_routing" : "1",
+        "_source" : {
+          "id" : "260",
+          "film_to_franchise" : {
+            "name" : "film",
+            "parent" : "1"
+          },
+          "title" : "Star Wars: Episode IV - A New Hope",
+          "year" : "1977",
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Sci-Fi"
+          ]
+        }
+      },
+      {
+        "_index" : "series",
+        "_id" : "1196",
+        "_score" : 1.0,
+        "_routing" : "1",
+        "_source" : {
+          "id" : "1196",
+          "film_to_franchise" : {
+            "name" : "film",
+            "parent" : "1"
+          },
+          "title" : "Star Wars: Episode V - The Empire Strikes Back",
+          "year" : "1980",
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Sci-Fi"
+          ]
+        }
+      },
+      {
+        "_index" : "series",
+        "_id" : "1210",
+        "_score" : 1.0,
+        "_routing" : "1",
+        "_source" : {
+          "id" : "1210",
+          "film_to_franchise" : {
+            "name" : "film",
+            "parent" : "1"
+          },
+          "title" : "Star Wars: Episode VI - Return of the Jedi",
+          "year" : "1983",
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Sci-Fi"
+          ]
+        }
+      },
+      {
+        "_index" : "series",
+        "_id" : "2628",
+        "_score" : 1.0,
+        "_routing" : "1",
+        "_source" : {
+          "id" : "2628",
+          "film_to_franchise" : {
+            "name" : "film",
+            "parent" : "1"
+          },
+          "title" : "Star Wars: Episode I - The Phantom Menace",
+          "year" : "1999",
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Sci-Fi"
+          ]
+        }
+      },
+      {
+        "_index" : "series",
+        "_id" : "5378",
+        "_score" : 1.0,
+        "_routing" : "1",
+        "_source" : {
+          "id" : "5378",
+          "film_to_franchise" : {
+            "name" : "film",
+            "parent" : "1"
+          },
+          "title" : "Star Wars: Episode II - Attack of the Clones",
+          "year" : "2002",
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Sci-Fi",
+            "IMAX"
+          ]
+        }
+      },
+      {
+        "_index" : "series",
+        "_id" : "33493",
+        "_score" : 1.0,
+        "_routing" : "1",
+        "_source" : {
+          "id" : "33493",
+          "film_to_franchise" : {
+            "name" : "film",
+            "parent" : "1"
+          },
+          "title" : "Star Wars: Episode III - Revenge of the Sith",
+          "year" : "2005",
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Sci-Fi"
+          ]
+        }
+      },
+      {
+        "_index" : "series",
+        "_id" : "122886",
+        "_score" : 1.0,
+        "_routing" : "1",
+        "_source" : {
+          "id" : "122886",
+          "film_to_franchise" : {
+            "name" : "film",
+            "parent" : "1"
+          },
+          "title" : "Star Wars: Episode VII - The Force Awakens",
+          "year" : "2015",
+          "genre" : [
+            "Action",
+            "Adventure",
+            "Fantasy",
+            "Sci-Fi",
+            "IMAX"
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+Reverse Lookup:
+
+```bash
+curl -H "Content-Type: application/json" -XGET '127.0.0.1:9200/series/_search?pretty' -d '
+{
+  "query":{
+    "has_child":{
+      "type":"film",
+      "query":{
+        "match":{
+          "title":"The Force Awakens"
+        }
+      }
+    }
+  }
+}'
+
+{
+  "took" : 20,
+  "timed_out" : false,
+  "_shards" : {
+    "total" : 1,
+    "successful" : 1,
+    "skipped" : 0,
+    "failed" : 0
+  },
+  "hits" : {
+    "total" : {
+      "value" : 1,
+      "relation" : "eq"
+    },
+    "max_score" : 1.0,
+    "hits" : [
+      {
+        "_index" : "series",
+        "_id" : "1",
+        "_score" : 1.0,
+        "_routing" : "1",
+        "_source" : {
+          "id" : "1",
+          "film_to_franchise" : {
+            "name" : "franchise"
+          },
+          "title" : "Star Wars"
         }
       }
     ]
