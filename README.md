@@ -62,6 +62,12 @@
     - [Data Modeling and Parent/Child Relationships, Part 1](#data-modeling-and-parentchild-relationships-part-1)
       - [Strategies For Relational Data](#strategies-for-relational-data)
     - [Data Modeling and Parent/Child Relationships, Part 2](#data-modeling-and-parentchild-relationships-part-2)
+    - [Flattened DataType](#flattened-datatype)
+      - [Mapping Explosions](#mapping-explosions)
+      - [Elasticsearch Cluster](#elasticsearch-cluster)
+      - [Updating Cluster State](#updating-cluster-state)
+      - [Match Query Summary](#match-query-summary)
+      - [Supported Queries for Flattened Datatype](#supported-queries-for-flattened-datatype)
 
 ## Section 1: Installing and Understanding Elasticsearch
 
@@ -1587,5 +1593,466 @@ curl -H "Content-Type: application/json" -XGET '127.0.0.1:9200/series/_search?pr
   }
 }
 ```
+
+[back](#toc)
+
+### Flattened DataType
+
+#### Mapping Explosions
+
+If you need to handle documents with many inner fields, Elasticsearch's performance can start to suffer.
+
+- each subfield gets mapped to individual fields by default with dynamic mappings
+
+To avoid reaching what is known as "mapping explosion", Elasticsearch offers the flattened datatype to avoid mapping each subfield as individual fields but rather as one flattened field containing the original data
+
+```bash
+curl -H "Content-Type: application/json" -XPUT "http://127.0.0.1:9200/demo-default/_doc/1" -d'{
+  "message": "[5592:1:0309/123054.737712:ERROR:child_process_sandbox_support_impl_linux.cc(79)] FontService unique font name matching request did not receive a response.",
+  "fileset": {
+    "name": "syslog"
+  },
+  "process": {
+    "name": "org.gnome.Shell.desktop",
+    "pid": 3383
+  },
+  "@timestamp": "2020-03-09T18:00:54.000+05:30",
+  "host": {
+    "hostname": "bionic",
+    "name": "bionic"
+  }
+}'
+
+{
+    "_index": "demo-default",
+    "_id": "1",
+    "_version": 1,
+    "result": "created",
+    "_shards": {
+        "total": 2,
+        "successful": 1,
+        "failed": 0
+    },
+    "_seq_no": 0,
+    "_primary_term": 1
+}
+```
+
+See default mapping
+
+```bash
+curl -H "Content-Type: application/json" -XGET "http://127.0.0.1:9200/demo-default/_mapping?pretty=true"
+
+{
+    "demo-default": {
+        "mappings": {
+            "properties": {
+                "@timestamp": {
+                    "type": "date"
+                },
+                "fileset": {
+                    "properties": {
+                        "name": {
+                            "type": "text",
+                            "fields": {
+                                "keyword": {
+                                    "type": "keyword",
+                                    "ignore_above": 256
+                                }
+                            }
+                        }
+                    }
+                },
+                "host": {
+                    "properties": {
+                        "hostname": {
+                            "type": "text",
+                            "fields": {
+                                "keyword": {
+                                    "type": "keyword",
+                                    "ignore_above": 256
+                                }
+                            }
+                        },
+                        "name": {
+                            "type": "text",
+                            "fields": {
+                                "keyword": {
+                                    "type": "keyword",
+                                    "ignore_above": 256
+                                }
+                            }
+                        }
+                    }
+                },
+                "message": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword",
+                            "ignore_above": 256
+                        }
+                    }
+                },
+                "process": {
+                    "properties": {
+                        "name": {
+                            "type": "text",
+                            "fields": {
+                                "keyword": {
+                                    "type": "keyword",
+                                    "ignore_above": 256
+                                }
+                            }
+                        },
+                        "pid": {
+                            "type": "long"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+Not defined any mapping for the demo dash default index, but we can see that Elasticsearch was smart enough to assign types for each of the fields.
+
+- flattened data types in Elasticsearch, which is designed to handle the use case of unknown or large numbers of inner fields occurring in a document
+- documents with many fields can cause ElasticSearch cluster to go down
+- Each field has an associated mapping type in its index
+- These types can be specified by the user, or Elasticsearch can automatically assign this to the field
+- Elasticsearch holds the mapping information of every index in this cluster state
+- The cluster state includes information such as index mappings, the no details, etc.
+
+```bash
+curl -H "Content-Type: application/json" -XGET "http://127.0.0.1:9200/_cluster/state?pretty=true" >> es-cluster-state.json
+```
+
+[es-cluster-state.json](assets/files/es-cluster-state.json)
+
+Now the important thing to know is that in most cases, especially in log management scenarios, Elasticsearch is typically set up as a cluster.
+
+#### Elasticsearch Cluster
+
+A **cluster** is a collection of Elasticsearch nodes.
+
+The presence of multiple nodes allows Elasticsearch to perform better indexing and searching operations
+
+```mermaid
+flowchart TD
+n1[Node 1 - Master] <--> n2[Node 2]
+n1 <--> n3[Node 3]
+```
+
+- Within this cluster, there will be a master node that sends the latest cluster state to all the other nodes
+- Upon receiving the cluster state, the nodes send an acknowledgement signal back to the master node
+
+> ❗ IMPORTANT: the cluster status passed between the nodes so that clusters run smoothly.
+
+#### Updating Cluster State
+
+```mermaid
+flowchart TD
+n1[Node 1 - Master] --> |Cluster state| n2[Node 2]
+n1 --> |Cluster state| n3[Node 3]
+n2 --> |acknoledgement from node2|n1
+n3 --> |acknoledgement from node3|n1
+```
+
+For each new field added to the document. A new mapping is created by Elasticsearch. For each new mapping update of the index, the cluster state also changes after each cluster state change. The other nodes need to be synched.
+Frequently, adding new fields to an index not only causes the cluster state to grow, but also triggers cluster state updates across all nodes which can result in delays if pushed far enough. And without the updated cluster, state nodes aren't able to perform basic operations like indexing and searching. This can cause memory issues within the nodes and result in poor performance and possibly lead to the cluster itself going down. When an Elasticsearch cluster crashes because of too many fields in a map. We call this a mapping explosion.
+
+In order to help prevent mapping explosions, Elasticsearch introduced the flat end data type. Essentially what this data type does is map the entire object along with its inner fields into a single field. In other words, if a field contains inner fields, the flattened data type maps, the parent field as a single type named flattened, and the inner fields don't appear in the mappings at all.
+
+```bash
+curl -H "Content-Type: application/json" -XPUT "http://127.0.0.1:9200/demo-flattened
+
+{
+    "acknowledged": true,
+    "shards_acknowledged": true,
+    "index": "demo-flatterned"
+}
+
+curl -H "Content-Type: application/json" -XPUT "http://127.0.0.1:9200/demo-flattened/_mapping" -d'{
+  "properties": {
+    "host": {
+      "type": "flattened"
+    }
+  }
+}'
+
+{
+    "acknowledged": true
+}
+
+curl -H "Content-Type: application/json" -XPUT "http://127.0.0.1:9200/demo-flattened/_doc/1" -d'{
+  "message": "[5592:1:0309/123054.737712:ERROR:child_process_sandbox_support_impl_linux.cc(79)] FontService unique font name matching request did not receive a response.",
+  "fileset": {
+    "name": "syslog"
+  },
+  "process": {
+    "name": "org.gnome.Shell.desktop",
+    "pid": 3383
+  },
+  "@timestamp": "2020-03-09T18:00:54.000+05:30",
+  "host": {
+    "hostname": "bionic",
+    "name": "bionic"
+  }
+}'
+
+{
+    "_index": "demo-flatterned",
+    "_id": "1",
+    "_version": 1,
+    "result": "created",
+    "_shards": {
+        "total": 2,
+        "successful": 1,
+        "failed": 0
+    },
+    "_seq_no": 0,
+    "_primary_term": 1
+}
+```
+
+So it's going to use that flattened mapping type. So again, in this document, you can see that the field host contains in inner fields, but with the assignment of flat into the host field, mapping will no longer show its inner fields.
+
+```bash
+curl -H "Content-Type: application/json" -XGET "http://127.0.0.1:9200/demo-flattened/_mapping?pretty=true"
+
+{
+    "demo-flatterned": {
+        "mappings": {
+            "properties": {
+                "@timestamp": {
+                    "type": "date"
+                },
+                "fileset": {
+                    "properties": {
+                        "name": {
+                            "type": "text",
+                            "fields": {
+                                "keyword": {
+                                    "type": "keyword",
+                                    "ignore_above": 256
+                                }
+                            }
+                        }
+                    }
+                },
+                "host": {
+                    "type": "flattened"
+                },
+                "message": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword",
+                            "ignore_above": 256
+                        }
+                    }
+                },
+                "process": {
+                    "properties": {
+                        "name": {
+                            "type": "text",
+                            "fields": {
+                                "keyword": {
+                                    "type": "keyword",
+                                    "ignore_above": 256
+                                }
+                            }
+                        },
+                        "pid": {
+                            "type": "long"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+Let's go up and look for the host field type. Now you can see that the process field contains inner fields and there are types listed in the mapping. This is because we didn't map it as a flat and data type.
+
+```bash
+curl -H "Content-Type: application/json" -XPOST "http://127.0.0.1:9200/demo-flattened/_update/1" -d'{
+    "doc" : {
+        "host" : {
+          "osVersion": "Bionic Beaver",
+          "osArchitecture":"x86_64"
+        }
+    }
+}'
+
+{
+    "_index": "demo-flatterned",
+    "_id": "1",
+    "_version": 2,
+    "result": "updated",
+    "_shards": {
+        "total": 2,
+        "successful": 1,
+        "failed": 0
+    },
+    "_seq_no": 1,
+    "_primary_term": 1
+}
+```
+
+- there are certain limitations to be aware of when using the flat and data type to mapping
+  - The main limitation with using the flat and data type is the fields of the flattened data type object will be treated as keywords
+  - In Elasticsearch, this means no analyzers and tokenize rules will be applied to the flat in fields and this results in a more limited search capability
+
+```bash
+curl -H "Content-Type: application/json" -XGET "http://127.0.0.1:9200/demo-flattened/_search?pretty=true" -d'{
+  "query": {
+    "term": {
+      "host": "Bionic Beaver"
+    }
+  }
+}'
+
+{
+    "took": 652,
+    "timed_out": false,
+    "_shards": {
+        "total": 1,
+        "successful": 1,
+        "skipped": 0,
+        "failed": 0
+    },
+    "hits": {
+        "total": {
+            "value": 1,
+            "relation": "eq"
+        },
+        "max_score": 0.39556286,
+        "hits": [
+            {
+                "_index": "demo-flatterned",
+                "_id": "1",
+                "_score": 0.39556286,
+                "_source": {
+                    "message": "[5592:1:0309/123054.737712:ERROR:child_process_sandbox_support_impl_linux.cc(79)] FontService unique font name matching request did not receive a response.",
+                    "fileset": {
+                        "name": "syslog"
+                    },
+                    "process": {
+                        "name": "org.gnome.Shell.desktop",
+                        "pid": 3383
+                    },
+                    "@timestamp": "2020-03-09T18:00:54.000+05:30",
+                    "host": {
+                        "hostname": "bionic",
+                        "name": "bionic",
+                        "osVersion": "Bionic Beaver",
+                        "osArchitecture": "x86_64"
+                    }
+                }
+            }
+        ]
+    }
+}
+
+curl -H "Content-Type: application/json" -XGET "http://127.0.0.1:9200/demo-flattened/_search?pretty=true" -d'{
+  "query": {
+    "term": {
+      "host.osVersion": "Bionic Beaver"
+    }
+  }
+}'
+
+{
+    "took": 29,
+    "timed_out": false,
+    "_shards": {
+        "total": 1,
+        "successful": 1,
+        "skipped": 0,
+        "failed": 0
+    },
+    "hits": {
+        "total": {
+            "value": 1,
+            "relation": "eq"
+        },
+        "max_score": 0.41501677,
+        "hits": [
+            {
+                "_index": "demo-flatterned",
+                "_id": "1",
+                "_score": 0.41501677,
+                "_source": {
+                    "message": "[5592:1:0309/123054.737712:ERROR:child_process_sandbox_support_impl_linux.cc(79)] FontService unique font name matching request did not receive a response.",
+                    "fileset": {
+                        "name": "syslog"
+                    },
+                    "process": {
+                        "name": "org.gnome.Shell.desktop",
+                        "pid": 3383
+                    },
+                    "@timestamp": "2020-03-09T18:00:54.000+05:30",
+                    "host": {
+                        "hostname": "bionic",
+                        "name": "bionic",
+                        "osVersion": "Bionic Beaver",
+                        "osArchitecture": "x86_64"
+                    }
+                }
+            }
+        ]
+    }
+}
+
+curl -H "Content-Type: application/json" -XGET "http://127.0.0.1:9200/demo-flattened/_search?pretty=true" -d'{
+  "query": {
+    "term": {
+      "host.osVersion": "Beaver"
+    }
+  }
+}'
+
+{
+    "took": 15,
+    "timed_out": false,
+    "_shards": {
+        "total": 1,
+        "successful": 1,
+        "skipped": 0,
+        "failed": 0
+    },
+    "hits": {
+        "total": {
+            "value": 0,
+            "relation": "eq"
+        },
+        "max_score": null,
+        "hits": []
+    }
+}
+```
+
+#### Match Query Summary
+
+| Match Query Text | Results                                                 | Reason                                                                                                               |
+| ---------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| "Bionc Beaver"   | Document return with osVersion value as "Bionic Beaver" | Exact match of the match query text with that of the host .osVersion's value                                         |
+| "bionic beaver"  | No documents returns                                    | The casing of the match query text differs from that of host.osVersion (Bionic Beaver)                               |
+| "Beaver"         | No documents returned                                   | The match query contains only a single token of "Beaver". But the host.osVersion value is "Bionic Beaver" as a whole |
+
+#### Supported Queries for Flattened Datatype
+
+- term, terms and terms_set
+- prefix
+- range (non-numerical range operations)
+- match and multi_match (we have to supply exact keywords)
+- query_string and simple_query_string
+- exists
+
+Another consideration to keep in mind when choosing the flattened data type is that elastic searches results highlighting feature won't be enabled for those fields. These highlighted snippets and search results help show the users where the query matches are. This is achieved using analysis, but if we use a flattened data type, it won't get analyzed. So the requirements need to fit this limitation.
 
 [back](#toc)
