@@ -68,6 +68,13 @@
       - [Updating Cluster State](#updating-cluster-state)
       - [Match Query Summary](#match-query-summary)
       - [Supported Queries for Flattened Datatype](#supported-queries-for-flattened-datatype)
+    - [Dealing with Mapping Exceptions](#dealing-with-mapping-exceptions)
+      - [Mappings](#mappings)
+      - [The Mapping Process](#the-mapping-process)
+      - [The Mapping Result](#the-mapping-result)
+      - [Mapping Challeges](#mapping-challeges)
+      - [Exmaples](#exmaples)
+        - [Explicit Mapping Mismatches](#explicit-mapping-mismatches)
 
 ## Section 1: Installing and Understanding Elasticsearch
 
@@ -292,9 +299,9 @@ bad: 2
   - Elasticsearch fundamentally works via HTTP requests and JSON data
   - Any language or tool that can handle HTTP can handle Elasticsearch
 - Client API
-  - Most languages have specialized Elasticsearch librariesto make it even easier
+  - Most languages have specialized Elasticsearch libraries to make it even easier
 - Analytic Tools
-  - Web-based graphical UI'ssuch as Kibana let you ineteract with your indices and explore them without writing code
+  - Web-based graphical UI's such as Kibana let you ineteract with your indices and explore them without writing code
 
 [back](#toc)
 
@@ -365,7 +372,7 @@ bad: 2
 
 - not as bad as it sounds - you can add <span style="color: blue;">more replica shards</span> for more read throughput
 - worst case you can <span style="color: blue;">re-index</span> your data
-- The number of shards can be set up front via a PUT commandvia <span style="color: blue;">REST</span>/HTTP
+- The number of shards can be set up front via a PUT command via <span style="color: blue;">REST</span>/HTTP
 
 ```bash
 PUT /testindex
@@ -2054,5 +2061,465 @@ curl -H "Content-Type: application/json" -XGET "http://127.0.0.1:9200/demo-flatt
 - exists
 
 Another consideration to keep in mind when choosing the flattened data type is that elastic searches results highlighting feature won't be enabled for those fields. These highlighted snippets and search results help show the users where the query matches are. This is achieved using analysis, but if we use a flattened data type, it won't get analyzed. So the requirements need to fit this limitation.
+
+[back](#toc)
+
+### Dealing with Mapping Exceptions
+
+#### Mappings
+
+<style>
+table {
+  border-collapse: collapse;
+}
+
+td {
+  border: 1px solid #000;
+  margin: 0;
+  padding: 0.5em;
+}
+
+td>img {
+  max-height: 50px;
+}
+
+.col-heading{
+  text-align: center;
+}
+</style>
+<html>
+  <table>
+    <tr>
+      <td rowspan="3">
+        MAPPING
+      </td>
+      <td class='col-heading'>
+      <img src='./assets/images/noun-process.png' />
+      </td>
+      <td class='col-heading'>
+      <img src='./assets/images/noun-result.png' />
+      </td>
+    </tr>
+    <tr>
+      <td class='col-heading'>
+        Process
+      </td>
+      <td class='col-heading'>
+        Result
+      </td>
+    </tr>
+    <tr>
+      <td>
+        Defining how JSON documents will be stored
+      </td>
+      <td>
+        The actual metadata resulting from the definition process
+      </td>
+    </tr>
+  </table>
+</html>
+
+#### The Mapping Process
+
+**<span style="color: blue;">Explicit Mapping</span>**
+Fields and their types are predefined
+
+**<span style="color: blue;">Dynamic Mapping</span>**
+Fields and their types automatically defined by Elasticsearch
+
+#### The Mapping Result
+
+- **<span style='color: cornflowerblue;'>Timestamp</span>** mapped as a date
+- **<span style='color: cornflowerblue;'>Service</span>** mapped as a keyword
+- **<span style='color: cornflowerblue;'>IP</span>** mapped as a datatype
+- **<span style='color: cornflowerblue;'>Port</span>** mapped as an integer
+- **<span style='color: cornflowerblue;'>Message</span>** mapped as text
+- <span style='color: cornflowerblue;'>More...</span>
+
+```json
+{
+  "mappings": {
+    "properties": {
+      "timestamp": { "type": "date" },
+      "service": { "type": "keyword" },
+      "host_ip": { "type": "ip" },
+      "port": { "type": "integer" },
+      "message": { "type": "text" }
+    }
+  }
+}
+```
+
+#### Mapping Challeges
+
+**<span style="color: blue;">Explicit Mapping</span>**
+Mapping exceptions when there's a mismatch
+
+- this happend if the mismatch falls beyond a certain **"safety zone"**
+
+**<span style="color: blue;">Dynamic Mapping</span>**
+May lead to a mapping explosion
+
+#### Exmaples
+
+##### Explicit Mapping Mismatches
+
+```bash
+curl -H "Content-Type: application/json" -XPUT "http://127.0.0.1:9200/microservice-logs" --date-raw '{
+  "mappings": {
+       "properties": {
+           "timestamp": { "type": "date"  },
+           "service": { "type": "keyword" },
+           "host_ip": { "type": "ip" },
+           "port": { "type": "integer" },
+           "message": { "type": "text" }
+       }
+   }
+}'
+
+{
+    "acknowledged": true,
+    "shards_acknowledged": true,
+    "index": "microservice-logs"
+}
+```
+
+_mismatch request (in safety zone)_
+
+```bash
+curl -H "Content-Type: application/json" -XPOST "http://localhost:9200/microservice-logs/_doc?pretty" \
+--data-raw '{
+    "timestamp": "2020-04-11T12:34:56.789Z",
+    "service": "XYZ",
+    "host_ip": "10.0.2.15",
+    "port": "15000",
+    "message": "Hello!"
+}'
+
+{
+    "_index": "microservice-logs",
+    "_id": "8xebeYIB9zpU5OVp0F9g",
+    "_version": 1,
+    "result": "created",
+    "_shards": {
+        "total": 2,
+        "successful": 1,
+        "failed": 0
+    },
+    "_seq_no": 0,
+    "_primary_term": 1
+}
+```
+
+- why mismatch?
+  - because in the mappings, we specified `port` as an integer but our request passed it in as a string
+- actually worked because the request mismatch fell within the safety zone
+
+_mismatch request (out of safety zone)_
+
+```bash
+curl -H "Content-Type: application/json" -XPOST "http://localhost:9200/microservice-logs/_doc?pretty" \
+--data-raw '{
+    "timestamp": "2020-04-11T12:34:56.789Z",
+    "service": "XYZ",
+    "host_ip": "10.0.2.15",
+    "port": "NONE",
+    "message": "I am not well!"
+}'
+
+{
+    "error": {
+        "root_cause": [
+            {
+                "type": "mapper_parsing_exception",
+                "reason": "failed to parse field [port] of type [integer] in document with id '9BegeYIB9zpU5OVp3l_K'. Preview of field's value: 'NONE'"
+            }
+        ],
+        "type": "mapper_parsing_exception",
+        "reason": "failed to parse field [port] of type [integer] in document with id '9BegeYIB9zpU5OVp3l_K'. Preview of field's value: 'NONE'",
+        "caused_by": {
+            "type": "number_format_exception",
+            "reason": "For input string: \"NONE\""
+        }
+    },
+    "status": 400
+}
+```
+
+- why mismatch?
+  - because in the mappings, we specified `port` as an integer but our request passed it in as "NONE"
+- threw an error because the request mismatch fell outside the safety zone
+
+How do we resolve this issue?
+
+- not a one size fits all solution
+- In this specific case, we can partially resolve the issue by defining a ignore malformed mapping parameter.
+- Now keep in mind this parameter is non-dynamic, so you either need to set it when creating your index or you need to close the index. Change the setting value and then reopen the index.
+
+_close the index and reset it with ignore malformed mapping parameter and then reopen_
+
+```bash
+curl -H "Content-Type: application/json" --request XPOST "http://localhost:9200/microservice-logs/_close"
+
+{
+    "acknowledged": true,
+    "shards_acknowledged": true,
+    "indices": {
+        "microservice-logs": {
+            "closed": true
+        }
+    }
+}
+
+curl -H "Content-Type: application/json" --location --request XPUT 'http://localhost:9200/microservice-logs/_settings' \ --data-raw '
+{
+   "index.mapping.ignore_malformed": true
+}'
+
+{
+    "acknowledged": true
+}
+
+curl -H "Content-Type: application/json" --request XPOST 'http://localhost:9200/microservice-logs/_open'
+
+{
+    "acknowledged": true,
+    "shards_acknowledged": true
+}
+```
+
+_access the same index again_
+
+```bash
+curl -H "Content-Type: application/json" --request XPOST 'http://localhost:9200/microservice-logs/_doc?pretty' \
+--data-raw '{"timestamp": "2020-04-11T12:34:56.789Z", "service": "XYZ", "host_ip": "10.0.2.15", "port": "NONE", "message": "I am not well!" }'
+
+{
+    "_index": "microservice-logs",
+    "_id": "5Wn8hIIBDQvflXJXNPUV",
+    "_version": 1,
+    "result": "created",
+    "_shards": {
+        "total": 2,
+        "successful": 1,
+        "failed": 0
+    },
+    "_seq_no": 1,
+    "_primary_term": 4
+}
+```
+
+Success!!! Now, we will see why it worked. The port was omitted.
+
+```bash
+curl -H "Content-Type: application/json" --request XGET 'http://localhost:9200/microservice-logs/_doc/5Wn8hIIBDQvflXJXNPUV?pretty'
+
+{
+    "_index": "microservice-logs",
+    "_id": "5Wn8hIIBDQvflXJXNPUV",
+    "_version": 1,
+    "_seq_no": 1,
+    "_primary_term": 4,
+    "_ignored": [
+        "port"
+    ],
+    "found": true,
+    "_source": {
+        "timestamp": "2020-04-11T12:34:56.789Z",
+        "service": "XYZ",
+        "host_ip": "10.0.2.15",
+        "port": "NONE",
+        "message": "I am not well!"
+    }
+}
+```
+
+Only considered a partial solution because the setting has its limits
+
+_Example_
+
+A developer might decide that when a microservice receives some API request, it should log the received JSON payload in the message field.
+
+Now we already map the message field as text and we still have the ignore malformed parameter set.
+
+```bash
+curl -H "Content-Type: application/json" --request POST 'http://localhost:9200/microservice-logs/_doc?pretty' \
+--data-raw '{"timestamp": "2020-04-11T12:34:56.789Z", "service": "ABC", "host_ip": "10.0.2.15", "port": 12345, "message": {"data": {"received":"here"}}}'
+
+{
+    "error": {
+        "root_cause": [
+            {
+                "type": "mapper_parsing_exception",
+                "reason": "failed to parse field [message] of type [text] in document with id '5mkGhYIBDQvflXJX_PVe'. Preview of field's value: '{data={received=here}}'"
+            }
+        ],
+        "type": "mapper_parsing_exception",
+        "reason": "failed to parse field [message] of type [text] in document with id '5mkGhYIBDQvflXJX_PVe'. Preview of field's value: '{data={received=here}}'",
+        "caused_by": {
+            "type": "illegal_state_exception",
+            "reason": "Can't get text on a START_OBJECT at 6:16"
+        }
+    },
+    "status": 400
+}
+```
+
+- This is because ignore malformed can't handle JSON objects on the input, which is a significant limitation to be aware of.
+- Now when speaking of JSON objects, be aware that all the mapping ideas remain valid for the nested parts as well.
+- Now we have need to introduce a new payload field of the type object where we can store the JSON at will.
+- with dynamic mapping in place, you can index it without first creating its mapping.
+
+```bash
+curl -H "Content-Type: application/json" --request XPOST 'http://localhost:9200/microservice-logs/_doc?pretty' \
+--data-raw '{"timestamp": "2020-04-11T12:34:56.789Z", "service": "ABC", "host_ip": "10.0.2.15", "port": 12345, "message": "Received...", "payload": {"data": {"received":"here"}}}'
+
+{
+    "_index": "microservice-logs",
+    "_id": "52kVhYIBDQvflXJXp_We",
+    "_version": 1,
+    "result": "created",
+    "_shards": {
+        "total": 2,
+        "successful": 1,
+        "failed": 0
+    },
+    "_seq_no": 2,
+    "_primary_term": 4
+}
+
+curl -H "Content-Type: application/json" --request XGET 'http://localhost:9200/microservice-logs/_mappings?pretty'
+
+{
+    "microservice-logs": {
+        "mappings": {
+            "properties": {
+                "host_ip": {
+                    "type": "ip"
+                },
+                "message": {
+                    "type": "text"
+                },
+                "payload": {
+                    "properties": {
+                        "data": {
+                            "properties": {
+                                "received": {
+                                    "type": "text",
+                                    "fields": {
+                                        "keyword": {
+                                            "type": "keyword",
+                                            "ignore_above": 256
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "service": {
+                    "type": "keyword"
+                },
+                "timestamp": {
+                    "type": "date"
+                }
+            }
+        }
+    }
+}
+```
+
+- dynamic mapping works, but there is a trap
+  - it was mapped as an object with sub properties defining the nested fields
+  - payloads are and gneerally any JSON object in the world of many producers and consumers can consist of almost anything
+
+```bash
+curl -H "Content-Type: application/json" --request XPOST 'http://localhost:9200/microservice-logs/_doc?pretty' \
+--data-raw '{"timestamp": "2020-04-11T12:34:56.789Z", "service": "ABC", "host_ip": "10.0.2.15", "port": 12345, "message": "Received...", "payload": {"data": {"received": {"even": "more"}}}}'
+
+{
+    "error": {
+        "root_cause": [
+            {
+                "type": "mapper_parsing_exception",
+                "reason": "failed to parse field [payload.data.received] of type [text] in document with id '6GkdhYIBDQvflXJXofW7'. Preview of field's value: '{even=more}'"
+            }
+        ],
+        "type": "mapper_parsing_exception",
+        "reason": "failed to parse field [payload.data.received] of type [text] in document with id '6GkdhYIBDQvflXJXofW7'. Preview of field's value: '{even=more}'",
+        "caused_by": {
+            "type": "illegal_state_exception",
+            "reason": "Can't get text on a START_OBJECT at 9:25"
+        }
+    },
+    "status": 400
+}
+```
+
+- again another `mapper_parsing_exception`
+- so, what can we do?
+
+1. engineers on the team need to be aware of these mapping mechanics so you can establish shared guidelines for the log fields
+2. may consider what's called a dead letter queue pattern that would store the fail documents in a separate queue
+   1. this either needs to be handled on an application level or by employing log stache DLQ
+      1. allows us to still process the failed documents
+
+Second area of caution in relation to mappings are limits
+
+- payloads you can see that the number of nested fields can start accumulating pretty quickly
+  - What is the limit then?
+    - 1000, which is the default limit of the number of fields in a mapping
+
+```bash
+curl -H "Content-Type: application/json" --location --request XPUT 'http://localhost/big-objects'
+
+{
+    "acknowledged": true,
+    "shards_acknowledged": true,
+    "index": "big-objects"
+}
+
+curl -H "Content-Type: application/json" -XPUT "http://127.0.0.1:9200/_doc" --data-raw "$thousandandone_fields_json"
+
+{
+    "error": {
+        "root_cause": [
+            {
+                "type": "mapper_parsing_exception",
+                "reason": "failed to parse"
+            }
+        ],
+        "type": "mapper_parsing_exception",
+        "reason": "failed to parse",
+        "caused_by": {
+            "type": "illegal_argument_exception",
+            "reason": "Limit of total fields [1000] has been exceeded while adding new fields [1001]"
+        }
+    },
+    "status": 400
+}
+```
+
+How to handle this?
+
+- you should definitely think about what you're storing in your indices and for what purpose
+- if you still need to, you can increase this 1000 limit, but be careful
+  - as with bigger complexity, might come a much bigger price of potential performance degradations and high memory pressure
+  - changing this limit can be performed with a simple, dynamic setting change
+
+```bash
+curl -H "Content-Type: application/json" --location -XPUT 'http://localhost:9200/big-objects/_settings' \
+--data-raw '{
+  "index.mapping.total.fields.limit": 1001
+}'
+
+{
+  "acknowledged": true,
+  "shards_acknowledged": true
+}
+```
 
 [back](#toc)
